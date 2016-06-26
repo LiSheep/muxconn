@@ -20,7 +20,7 @@ char *alloc_proto_msg(struct mux_socket *sock, uint8_t type, uint8_t flag,
 	proto->reserve = 0;
 	proto->type = type;
 	proto->flag = flag;
-	proto->length = *tot_len;
+	proto->length = payload_len;
 	if (sock)
 		proto->sequence = sock->seq;
 	else

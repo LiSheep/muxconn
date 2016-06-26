@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include <event2/event.h>
 #include "mux_internal.h"
@@ -65,4 +66,11 @@ void mux_listener_free(struct mux_listener *m) {
 void mux_client_set_eventcb(struct mux *mux, mux_client_event_cb cb, void *arg) {
 	mux->client_eventcb = cb;
 	mux->arg = arg;
+}
+
+void mux_set_write_watermask(struct mux *m, size_t mask) {
+	assert(mask >= 10240);
+	assert(m->bev);
+	m->write_watermask = mask;
+	bufferevent_setwatermark(m->bev, EV_WRITE, mask/2, mask);
 }

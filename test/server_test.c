@@ -11,12 +11,16 @@
 char test_buff[LEN];
 
 void readcb(struct mux_socket *sock, const char *data, size_t len, void *arg) {
-	char *b = "hello";
-	mux_socket_write(sock, b, strlen(b)+1);
-
-	mux_socket_write(sock, test_buff, LEN);
+	printf("%s\n", data);
+	printf("len %d\n", len);
 	mux_socket_close(sock);
+}
 
+void readcb2(struct mux_socket *sock, const char *data, size_t len, void *arg) {
+	int *i = (int*)data;
+	printf("recv %d\n", *i);
+	printf("len %d\n", len);
+	mux_socket_close(sock);
 }
 
 void eventcb(struct mux_socket *sock, int event, void *arg) {
@@ -30,7 +34,7 @@ void acceptcb(struct mux_socket *sock, void *arg) {
 
 void acceptcb2(struct mux_socket *sock, void *arg) {
 	printf("user acceptcb2 call\n");
-	mux_socket_set_callback(sock, readcb, NULL, eventcb, NULL);
+	mux_socket_set_callback(sock, readcb2, NULL, eventcb, NULL);
 }
 
 int main() {

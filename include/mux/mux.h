@@ -41,4 +41,6 @@ void mux_listener_free(struct mux_listener *m);
 
 int mux_add_acceptcb(struct mux_listener *m, const char *service, mux_accept_cb acceptcb, void *arg);
 
+void mux_set_write_watermask(struct mux *m, size_t mask);
+
 #endif

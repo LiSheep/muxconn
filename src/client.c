@@ -53,15 +53,15 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 			break;
 		if(length < proto->length)
 			break;
-		char buff[proto->length];
-		bufferevent_read(bev, buff, proto->length);
+		char buff[proto->length + MUX_PROTO_HEAD_LEN];
+		bufferevent_read(bev, buff, sizeof(buff));
 		proto = (mux_proto_t*)buff;
 		if (proto->hr != 0)
 			goto error;
 		switch (proto->type) {
 			case PTYPE_HANDSHAKE:
 				PEP_TRACE("muxconn: recv handshake seq %u", proto->sequence);
-				if (strncmp(proto->payload, MUX_PROTO_SECRET, proto->length - MUX_PROTO_HEAD_LEN)) {
+				if (strncmp(proto->payload, MUX_PROTO_SECRET, proto->length)) {
 					rst_seq = proto->sequence;
 					goto rst;
 				}
@@ -195,7 +195,7 @@ static int __connect_server(struct mux *client) {
 		return -1;
 	}
 
-	bufferevent_setcb(client->bev, __client_readcb, NULL, __client_eventcb, client);
+	bufferevent_setcb(client->bev, __client_readcb, sock_cache_writecb, __client_eventcb, client);
 	bufferevent_enable(client->bev, EV_WRITE|EV_READ);
 	return 0;
 }
@@ -235,11 +235,17 @@ struct mux *mux_client_init(struct event_base* base, const char *remote_ip, int 
 		PEP_ERROR("muxconn: event_new fail");
 		goto fail2;
 	}
-
+	client->output = evbuffer_new();
+	if (NULL == client->output) {
+		PEP_ERROR("muxconn: evbuffer_new fail");
+		goto fail3;
+	}
 	if (__connect_server(client) == -1) {
 		__reconnect_server(client);
 	}
 	return client;
+fail3:
+	event_free(client->heartbeat_timer);
 fail2:
 	event_free(client->reconnect_timer);
 fail1:

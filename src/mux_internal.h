@@ -24,6 +24,7 @@ struct mux {
 	uint16_t remote_port;
 	uint32_t local_ip;
 	uint16_t local_port;
+	size_t write_watermask;
 	
 	// sock
 	uint32_t sequence;
@@ -37,6 +38,7 @@ struct mux {
 	struct event* reconnect_timer;
 	struct event* heartbeat_timer;
 	struct bufferevent* bev;
+	struct evbuffer* output; // for big write
 };
 
 struct mux_listener {
@@ -95,5 +97,6 @@ void mux_socket_incref(struct mux_socket *sock);
 void mux_socket_decref_free(struct mux_socket *sock);
 void free_seq_map(struct hashtable *map);
 int mux_socket_recvdata(struct mux_socket *sock, mux_proto_t *proto);
+void sock_cache_writecb(struct bufferevent *bev, void *ctx);
 
 #endif

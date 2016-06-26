@@ -58,16 +58,24 @@ static void __acceptcb(struct evconnlistener *listener, int fd,
 	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
 	if(!bev) {
 		PEP_ERROR("muxconn: bufferevent_socket_new error");
-		return;
+		goto fail;
 	}
 	struct timeval timeout;
 	timeout.tv_sec = 2;  // heart beat
 	timeout.tv_usec = 0;
-	
+	if(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+		PEP_ERROR("muxconn: setsockopt SO_RCVTIMEO failed");
+		goto fail1;
+	}
 	struct mux *server = calloc(1, sizeof(struct mux));
 	if (NULL == server) {
-		bufferevent_free(bev);
-		return;
+		PEP_ERROR("muxconn: calloc fail");
+		goto fail1;
+	}
+	server->output = evbuffer_new();
+	if (NULL == server->output) {
+		PEP_ERROR("muxconn: evbuffer_new fail");
+		goto fail2;
 	}
 	struct sockaddr_in *addr = (struct sockaddr_in *)address;
 	server->base = base;
@@ -79,12 +87,15 @@ static void __acceptcb(struct evconnlistener *listener, int fd,
 	server->bev = bev;
 
 	PEP_TRACE("muxconn: accept new client "NIPQUAD_FMT":%d", NIPQUAD_H(server->remote_ip), server->remote_port);
-	bufferevent_setcb(bev, __server_readcb, NULL, __server_eventcb, server);
+	bufferevent_setcb(bev, __server_readcb, sock_cache_writecb, __server_eventcb, server);
 	bufferevent_enable(bev, EV_READ | EV_WRITE); 
-	if(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-		PEP_ERROR("muxconn: setsockopt SO_RCVTIMEO failed");
-		return;
-	}
+	return;
+fail2:
+	free(server);
+fail1:
+	bufferevent_free(bev);
+fail:
+	return;
 }
 
 static void __accept_errorcb(struct evconnlistener *listener, void *ctx) {
@@ -107,17 +118,16 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 			break;
 		if (proto->hr != 0)
 			goto error;
-		if(length < proto->length)
+		if(length < proto->length + MUX_PROTO_HEAD_LEN)
 			break;
-		char buff[proto->length];
-		bufferevent_read(bev, buff, proto->length);
+		char buff[proto->length + MUX_PROTO_HEAD_LEN];
+		bufferevent_read(bev, buff, sizeof(buff));
 		proto = (mux_proto_t*)buff;
 		struct mux_socket *sock = NULL;
 		uint32_t seq = proto->sequence;
 		switch (proto->type) {
 			case PTYPE_DATA:
-				PEP_TRACE("muxconn: recv seq %u", seq);
-				PEP_TRACE("muxconn: recv DATA %d", proto->length);
+				PEP_TRACE("muxconn: recv seq %u, data_len: %d", seq, proto->length);
 				sock = mux_socket_get(server, proto->sequence);
 				if (NULL == sock) {
 					rst_seq = proto->sequence;
@@ -134,13 +144,14 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 					rst_seq = proto->sequence;
 					goto rst;
 				}
-				int left_len = proto->length - MUX_PROTO_HEAD_LEN - MUX_PROTO_SECRET_LEN;
+				int left_len = proto->length - MUX_PROTO_SECRET_LEN;
 				if (left_len > SERVICE_NAME_MAX_LEN) {
 					rst_seq = proto->sequence;
+					PEP_ERROR("muxconn: recv error service name");
 					goto rst;
 				}
 				char *service_name = proto->payload + MUX_PROTO_SECRET_LEN;
-				// char *service_name = stdndup()
+				PEP_TRACE("muxconn: accept service %s", service_name);
 				sock = mux_socket_new4server(server, seq);
 				if (NULL == sock) {
 					rst_seq = proto->sequence;

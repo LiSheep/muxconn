@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include <event2/buffer.h>
+#include <event2/bufferevent.h>
 
 #include <mux/mux.h>
 #include "hashtable.h"
@@ -92,6 +93,35 @@ static int __eqf(void *k1, void *k2) {
 // 		m->fd_hint--;
 // 	free(sock);
 // }
+
+static int __send_or_cache(struct mux_socket *sock, const char *data, size_t len) {
+	assert(sock->mux->bev);
+
+	struct evbuffer *out_buffer = bufferevent_get_output(sock->mux->bev);
+	size_t out_len = evbuffer_get_length(out_buffer);
+	if (out_len > sock->mux->write_watermask) {
+		// cache
+		return evbuffer_add(sock->mux->output, data, len);
+	} else {
+		// send
+		if (evbuffer_get_length(sock->mux->output) > 0) {
+			bufferevent_write_buffer(sock->mux->bev, sock->mux->output);
+			out_len = evbuffer_get_length(out_buffer);
+			if (out_len > sock->mux->write_watermask) {
+				return evbuffer_add(sock->mux->output, data, len);
+			}
+		}
+		return bufferevent_write(sock->mux->bev, data, len);
+	}
+	return -1;
+}
+
+void sock_cache_writecb(struct bufferevent *bev, void *ctx) {
+	struct mux *mux = (struct mux*)ctx;
+	if (evbuffer_get_length(mux->output) > 0) {
+		bufferevent_write_buffer(bev, mux->output);
+	}
+}
 
 struct mux_socket *mux_socket_new(struct mux *m) {
 	if (NULL == m)
@@ -179,7 +209,7 @@ int mux_socket_connect(struct mux_socket *sock, const char *service_name) {
 	char *buff = alloc_connect_handshake_msg(sock, service_name, &len);
 	if (NULL == buff)
 		return -1;
-	if (mux_client_sendto(sock->mux, buff, len) != 0) {
+	if (bufferevent_write(sock->mux->bev, buff, len) != 0) {
 		free(buff);
 		return -1;
 	}
@@ -202,40 +232,54 @@ static int mux_socket_write_bigdata(struct mux_socket *sock, const char *data, s
 	char buff[MUX_PROTO_MAX_LEN];
 	mux_proto_t *proto = (mux_proto_t *)buff;
 	int left_len = len;
+	int ret = 0;
 	while(left_len > 0) {
 		proto->hr = 0;
 		proto->reserve = 0;
 		proto->type = PTYPE_DATA;
 		proto->sequence = sock->seq;
-
 		if (left_len > MUX_PACKAGE_MAX_LEN) {
-			proto->length = MUX_PROTO_MAX_LEN;
+			proto->length = MUX_PACKAGE_MAX_LEN;
 			proto->flag = PFLAG_MORE;
 			memcpy(proto->payload, data, MUX_PACKAGE_MAX_LEN);
-			mux_client_sendto(sock->mux, buff, MUX_PROTO_MAX_LEN);
+			if (sock->mux->write_watermask > 0) {
+				ret = __send_or_cache(sock, buff, MUX_PROTO_MAX_LEN);
+			} else {
+				ret = bufferevent_write(sock->mux->bev, buff, MUX_PROTO_MAX_LEN);
+			}
 			data = data + MUX_PACKAGE_MAX_LEN;
 			left_len -= MUX_PACKAGE_MAX_LEN;
 		} else {
 			proto->flag = 0;
-			proto->length = MUX_PROTO_HEAD_LEN + left_len;
+			proto->length = left_len;
 			memcpy(proto->payload, data, left_len);
-			mux_client_sendto(sock->mux, buff, left_len);
+			if (sock->mux->write_watermask > 0) {
+				ret = __send_or_cache(sock, buff, left_len + MUX_PROTO_HEAD_LEN);
+			} else {
+				ret = bufferevent_write(sock->mux->bev, buff, left_len + MUX_PROTO_HEAD_LEN);
+			}
 			left_len = 0;
 		}
 	}
+	return ret;
 }
 
 int mux_socket_write(struct mux_socket *sock, const char *data, size_t len) {
 	assert(sock);
+	int ret = 0;
 	if (len > MUX_PACKAGE_MAX_LEN)
 		return mux_socket_write_bigdata(sock, data, len);
 	size_t tot_len = 0;
 	char * buff = alloc_data_msg(sock, data, len, &tot_len);
 	if (buff == NULL)
 		return -1;
-	mux_client_sendto(sock->mux, buff, tot_len);
+	if (sock->mux->write_watermask > 0) {
+		ret = __send_or_cache(sock, buff, tot_len);
+	} else {
+		ret = bufferevent_write(sock->mux->bev, buff, tot_len);
+	}
 	free(buff);
-	return 0;
+	return ret;
 }
 
 void mux_socket_set_callback(struct mux_socket *sock, mux_data_cb readcb,
@@ -248,8 +292,10 @@ void mux_socket_set_callback(struct mux_socket *sock, mux_data_cb readcb,
 }
 
 int mux_socket_recvdata(struct mux_socket *sock, mux_proto_t *proto) {
-	if (proto->length <= MUX_PROTO_HEAD_LEN || NULL == proto->payload)
+	if (proto->length <= 0 || NULL == proto->payload) {
+		PEP_ERROR("muxconn: socket_recvdata error");
 		return -1;
+	}
 	PEP_TRACE("recv flag %d, len %d", proto->flag, proto->length);
 	if (proto->flag == PFLAG_MORE) {
 		if (NULL == sock->recv_buff) {
@@ -259,17 +305,21 @@ int mux_socket_recvdata(struct mux_socket *sock, mux_proto_t *proto) {
 				return -1;
 			}
 		}
-		evbuffer_add(sock->recv_buff, proto->payload, proto->length - MUX_PROTO_HEAD_LEN);
+		evbuffer_add(sock->recv_buff, proto->payload, proto->length);
 		return 0;
 	}
 	if (sock->recv_buff) {
-		evbuffer_add(sock->recv_buff, proto->payload, proto->length - MUX_PROTO_HEAD_LEN);
+		evbuffer_add(sock->recv_buff, proto->payload, proto->length);
 		char *buff = evbuffer_pullup(sock->recv_buff, -1);
+		mux_socket_incref(sock);
 		sock->readcb(sock, buff, evbuffer_get_length(sock->recv_buff), sock->arg);
 		evbuffer_free(sock->recv_buff);
 		sock->recv_buff = NULL;
+		mux_socket_decref_free(sock);
 	} else {
-		sock->readcb(sock, proto->payload, proto->length - MUX_PROTO_HEAD_LEN, sock->arg);
+		mux_socket_incref(sock);
+		sock->readcb(sock, proto->payload, proto->length, sock->arg);
+		mux_socket_decref_free(sock);
 	}
 	return 0;
 }
