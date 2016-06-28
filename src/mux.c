@@ -74,3 +74,8 @@ void mux_set_write_watermask(struct mux *m, size_t mask) {
 	m->write_watermask = mask;
 	bufferevent_setwatermark(m->bev, EV_WRITE, mask/2, mask);
 }
+
+void mux_listener_set_write_watermask(struct mux_listener *m, size_t mask) {
+	assert(mask >= 10240);
+	m->write_watermask = mask;
+}

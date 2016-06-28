@@ -29,7 +29,7 @@ void eventcb(struct mux_socket *sock, int event, void *arg) {
 		snd_ev = event_new(sock->mux->base, -1, EV_PERSIST, snd_timercb, sock);
 		assert(snd_ev);
 		struct timeval timeout;
-		timeout.tv_sec = 10;
+		timeout.tv_sec = 1;
 		timeout.tv_usec = 0;
 		event_add(snd_ev, &timeout);
 	} else {

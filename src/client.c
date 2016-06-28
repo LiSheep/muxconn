@@ -37,7 +37,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 	assert(client);
 	struct evbuffer* src = bufferevent_get_input(bev);
 	size_t length = evbuffer_get_length(src);
-	if (client->status < MUX_CONNECTED) {
+	if (client->status != MUX_CONNECTED && client->status != MUX_ESTABLISH) {
 		PEP_ERROR("muxconn: client status error");
 		return;
 	}
@@ -70,6 +70,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 					rst_seq = proto->sequence;
 					goto rst;
 				}
+				cli_sock->status = SOCK_ESTABLISH;
 				if (cli_sock && cli_sock->eventcb)
 					cli_sock->eventcb(cli_sock, MUX_EV_CONNECTED, cli_sock->arg);
 			break;
@@ -109,7 +110,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 				}
 			break;
 			default:
-			PEP_TRACE("muxconn: type %d error", proto->type);
+			PEP_ERROR("muxconn: type %d error", proto->type);
 			goto error;
 		}
 		length = evbuffer_get_length(src);

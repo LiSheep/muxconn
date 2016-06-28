@@ -5,12 +5,12 @@
 #include <string.h>
 #include <assert.h>
 
-char snd_buff[4096]; //4k
+char snd_buff[40960]; //4k
 
 void readcb(struct mux_socket *sock, const char *data, size_t len, void *arg) {
-//	printf("recv %d\n", len); 
-//	mux_socket_write(sock, snd_buff, sizeof(snd_buff));
-	printf("%s\n", data);
+	printf("recv %d\n", len); 
+	mux_socket_write(sock, snd_buff, sizeof(snd_buff));
+//	printf("%s\n", data);
 }
 
 void eventcb(struct mux_socket *sock, int event, void *arg) {
@@ -39,6 +39,7 @@ int main(int argc, char **argv) {
 	struct mux_listener *server = mux_server_init(base, "0.0.0.0", atoi(argv[1]));
 	assert(server);
 	mux_add_acceptcb(server, "test", acceptcb, NULL);
+	mux_listener_set_write_watermask(server, 10240); 
 	event_base_dispatch(base);
 
 	mux_listener_free(server);

@@ -61,7 +61,7 @@ static void __acceptcb(struct evconnlistener *listener, int fd,
 		goto fail;
 	}
 	struct timeval timeout;
-	timeout.tv_sec = 2;  // heart beat
+	timeout.tv_sec = 4;  // heart beat*2
 	timeout.tv_usec = 0;
 	if(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
 		PEP_ERROR("muxconn: setsockopt SO_RCVTIMEO failed");
@@ -88,7 +88,11 @@ static void __acceptcb(struct evconnlistener *listener, int fd,
 
 	PEP_TRACE("muxconn: accept new client "NIPQUAD_FMT":%d", NIPQUAD_H(server->remote_ip), server->remote_port);
 	bufferevent_setcb(bev, __server_readcb, sock_cache_writecb, __server_eventcb, server);
-	bufferevent_enable(bev, EV_READ | EV_WRITE); 
+	bufferevent_enable(bev, EV_READ | EV_WRITE);
+	if (server_listener->write_watermask > 0) {
+		server->write_watermask = server_listener->write_watermask;
+		bufferevent_setwatermark(server->bev, EV_WRITE, server->write_watermask/2, server->write_watermask);
+	}
 	return;
 fail2:
 	free(server);
@@ -99,7 +103,7 @@ fail:
 }
 
 static void __accept_errorcb(struct evconnlistener *listener, void *ctx) {
-	PEP_TRACE("muxconn: accept fail %s", strerror(errno));
+	PEP_ERROR("muxconn: accept fail %s", strerror(errno));
 }
 
 static void __server_readcb(struct bufferevent *bev, void *ctx) {

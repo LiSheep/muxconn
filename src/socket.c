@@ -143,7 +143,7 @@ struct mux_socket *mux_socket_new(struct mux *m) {
 	if (hashtable_insert(m->seq_map, &sock->seq, sock) > 0)
 		goto fail1;
 	sock->mux = m;
-
+	sock->status = SOCK_INIT;
 	return sock;
 fail1:
 	free(sock);
@@ -167,6 +167,7 @@ struct mux_socket *mux_socket_new4server(struct mux *m, uint32_t seq) {
 	sock->seq = seq;
 	sock->mux = m;
 	sock->refcnt = 1;
+	sock->status = SOCK_ESTABLISH;
 	if (hashtable_insert(m->seq_map, &sock->seq, sock) > 0)
 		goto fail1;
 	return sock;
@@ -194,6 +195,7 @@ void mux_socket_decref_free(struct mux_socket *sock) {
 }
 
 void mux_socket_close(struct mux_socket *sock) {
+	sock->status = SOCK_CLOSE;
 	if (NULL == sock || NULL == sock->mux->bev)
 		return;
 	assert(sock->mux);
@@ -206,6 +208,10 @@ void mux_socket_close(struct mux_socket *sock) {
 
 int mux_socket_connect(struct mux_socket *sock, const char *service_name) {
 	size_t len = 0;
+	if (sock->status != SOCK_INIT)
+		return -1;
+	if (sock->mux->status != MUX_CONNECTED && sock->mux->status != MUX_ESTABLISH)
+		return -1;
 	char *buff = alloc_connect_handshake_msg(sock, service_name, &len);
 	if (NULL == buff)
 		return -1;
@@ -227,7 +233,7 @@ struct mux_socket *mux_socket_get(struct mux *m, uint32_t seq) {
 #define MUX_PROTO_MAX_LEN 4200
 #define MUX_PACKAGE_MAX_LEN (MUX_PROTO_MAX_LEN - MUX_PROTO_HEAD_LEN)
 static int mux_socket_write_bigdata(struct mux_socket *sock, const char *data, size_t len) {
-	assert(sock);
+	assert(sock && sock->mux);
 	assert(len > MUX_PACKAGE_MAX_LEN);
 	char buff[MUX_PROTO_MAX_LEN];
 	mux_proto_t *proto = (mux_proto_t *)buff;
@@ -267,6 +273,10 @@ static int mux_socket_write_bigdata(struct mux_socket *sock, const char *data, s
 int mux_socket_write(struct mux_socket *sock, const char *data, size_t len) {
 	assert(sock);
 	int ret = 0;
+	if (sock->status != SOCK_ESTABLISH)
+		return -1;
+	if (sock->mux->status != MUX_CONNECTED && sock->mux->status != MUX_ESTABLISH)
+		return -1;
 	if (len > MUX_PACKAGE_MAX_LEN)
 		return mux_socket_write_bigdata(sock, data, len);
 	size_t tot_len = 0;

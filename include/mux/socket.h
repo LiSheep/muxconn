@@ -20,8 +20,10 @@ void mux_socket_close(struct mux_socket *sock);
 
 int mux_socket_connect(struct mux_socket *sock, const char *service_name);
 
+// you can't write before sock connected successful
 int mux_socket_write(struct mux_socket *sock, const char *data, size_t len);
 
+// the eventcb will not called if you called mux_socket_close to close the socket
 void mux_socket_set_callback(struct mux_socket *sock, mux_data_cb readcb, mux_data_cb writecb, mux_event_cb eventcb, void *arg);
 
 #endif

@@ -44,6 +44,7 @@ struct mux {
 struct mux_listener {
 	uint32_t local_ip;
 	uint16_t local_port;
+	size_t write_watermask;
 	struct event_base *base;
 	struct evconnlistener *evlistener;
 	struct hashtable *acceptcbs; //key:service_name, value:mux_accept_cb acceptcb;
