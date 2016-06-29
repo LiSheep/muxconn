@@ -166,7 +166,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 					rst_seq = proto->sequence;
 					goto rst;
 				}
-				bufferevent_write(bev, mbuff, mlen);
+				send_or_cache(server, mbuff, mlen);
 				free(mbuff);
 				mux_accept_cb acceptcb = hashtable_search(server->listener->acceptcbs, service_name);
 				if (acceptcb == NULL) {
@@ -182,7 +182,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 				if (NULL == mbuff) {
 					break;
 				}
-				bufferevent_write(bev, mbuff, mlen);
+				send_or_cache(server, mbuff, mlen);
 				free(mbuff);
 			break;
 			case PTYPE_RST:
@@ -212,7 +212,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 		continue;
 		rst:
 			mbuff = alloc_rst_msg(rst_seq, &mlen);
-			bufferevent_write(bev, mbuff, mlen);
+			send_or_cache(server, mbuff, mlen);
 			free(mbuff);
 			if(NULL != sock)
 				mux_socket_decref_free(sock);

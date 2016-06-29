@@ -91,7 +91,6 @@ enum mux_proto_flag_e {
 	PFLAG_MORE = 1
 };
 
-int mux_client_sendto(struct mux *client, const char *paylod, size_t len);
 struct mux_socket *mux_socket_new4server(struct mux *m, uint32_t seq);
 struct mux_socket *mux_socket_get(struct mux *m, uint32_t seq);
 void mux_socket_incref(struct mux_socket *sock);
@@ -99,5 +98,6 @@ void mux_socket_decref_free(struct mux_socket *sock);
 void free_seq_map(struct hashtable *map);
 int mux_socket_recvdata(struct mux_socket *sock, mux_proto_t *proto);
 void sock_cache_writecb(struct bufferevent *bev, void *ctx);
+int send_or_cache(struct mux *mux, const char *data, size_t len);
 
 #endif

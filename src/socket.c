@@ -94,24 +94,26 @@ static int __eqf(void *k1, void *k2) {
 // 	free(sock);
 // }
 
-static int __send_or_cache(struct mux_socket *sock, const char *data, size_t len) {
-	assert(sock->mux->bev);
-
-	struct evbuffer *out_buffer = bufferevent_get_output(sock->mux->bev);
+int send_or_cache(struct mux *mux, const char *data, size_t len) {
+	assert(mux->bev);
+	if (mux->write_watermask <= 0) {
+		return bufferevent_write(mux->bev, data, len);
+	}
+	struct evbuffer *out_buffer = bufferevent_get_output(mux->bev);
 	size_t out_len = evbuffer_get_length(out_buffer);
-	if (out_len > sock->mux->write_watermask) {
+	if (out_len > mux->write_watermask) {
 		// cache
-		return evbuffer_add(sock->mux->output, data, len);
+		return evbuffer_add(mux->output, data, len);
 	} else {
 		// send
-		if (evbuffer_get_length(sock->mux->output) > 0) {
-			bufferevent_write_buffer(sock->mux->bev, sock->mux->output);
+		if (evbuffer_get_length(mux->output) > 0) {
+			bufferevent_write_buffer(mux->bev, mux->output);
 			out_len = evbuffer_get_length(out_buffer);
-			if (out_len > sock->mux->write_watermask) {
-				return evbuffer_add(sock->mux->output, data, len);
+			if (out_len > mux->write_watermask) {
+				return evbuffer_add(mux->output, data, len);
 			}
 		}
-		return bufferevent_write(sock->mux->bev, data, len);
+		return bufferevent_write(mux->bev, data, len);
 	}
 	return -1;
 }
@@ -201,7 +203,7 @@ void mux_socket_close(struct mux_socket *sock) {
 	assert(sock->mux);
 	size_t len = 0;
 	char * buff = alloc_close_msg(sock, &len);
-	bufferevent_write(sock->mux->bev, buff, len);
+	send_or_cache(sock->mux, buff, len);
 	free(buff);
 	mux_socket_decref_free(sock);
 }
@@ -215,7 +217,7 @@ int mux_socket_connect(struct mux_socket *sock, const char *service_name) {
 	char *buff = alloc_connect_handshake_msg(sock, service_name, &len);
 	if (NULL == buff)
 		return -1;
-	if (bufferevent_write(sock->mux->bev, buff, len) != 0) {
+	if (send_or_cache(sock->mux, buff, len) != 0) {
 		free(buff);
 		return -1;
 	}
@@ -248,22 +250,14 @@ static int mux_socket_write_bigdata(struct mux_socket *sock, const char *data, s
 			proto->length = MUX_PACKAGE_MAX_LEN;
 			proto->flag = PFLAG_MORE;
 			memcpy(proto->payload, data, MUX_PACKAGE_MAX_LEN);
-			if (sock->mux->write_watermask > 0) {
-				ret = __send_or_cache(sock, buff, MUX_PROTO_MAX_LEN);
-			} else {
-				ret = bufferevent_write(sock->mux->bev, buff, MUX_PROTO_MAX_LEN);
-			}
+			ret = send_or_cache(sock->mux, buff, MUX_PROTO_MAX_LEN);
 			data = data + MUX_PACKAGE_MAX_LEN;
 			left_len -= MUX_PACKAGE_MAX_LEN;
 		} else {
 			proto->flag = 0;
 			proto->length = left_len;
 			memcpy(proto->payload, data, left_len);
-			if (sock->mux->write_watermask > 0) {
-				ret = __send_or_cache(sock, buff, left_len + MUX_PROTO_HEAD_LEN);
-			} else {
-				ret = bufferevent_write(sock->mux->bev, buff, left_len + MUX_PROTO_HEAD_LEN);
-			}
+			ret = send_or_cache(sock->mux, buff, left_len + MUX_PROTO_HEAD_LEN);
 			left_len = 0;
 		}
 	}
@@ -283,11 +277,7 @@ int mux_socket_write(struct mux_socket *sock, const char *data, size_t len) {
 	char * buff = alloc_data_msg(sock, data, len, &tot_len);
 	if (buff == NULL)
 		return -1;
-	if (sock->mux->write_watermask > 0) {
-		ret = __send_or_cache(sock, buff, tot_len);
-	} else {
-		ret = bufferevent_write(sock->mux->bev, buff, tot_len);
-	}
+	ret = send_or_cache(sock->mux, buff, tot_len);
 	free(buff);
 	return ret;
 }

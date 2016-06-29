@@ -117,7 +117,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 		continue;
 		rst:
 			mbuff = alloc_rst_msg(rst_seq, &mlen);
-			bufferevent_write(bev, mbuff, mlen);
+			send_or_cache(client, mbuff, mlen);
 			free(mbuff);
 			if(NULL != cli_sock)
 				mux_socket_decref_free(cli_sock);
@@ -168,7 +168,7 @@ static void __heartbeat_timercb(int fd, short events, void *ctx) {
 	char *buff = alloc_pingpong_msg(client, &len, 1);
 	if (NULL == buff)
 		return;
-	bufferevent_write(client->bev, buff, len);
+	send_or_cache(client, buff, len);
 	free(buff);
 }
 
@@ -253,11 +253,4 @@ fail1:
 	free(client);
 fail:
 	return NULL;
-}
-
-int mux_client_sendto(struct mux *client, const char *paylod, size_t len) {
-	if (NULL == client->bev)
-		return -1;
-	bufferevent_write(client->bev, paylod, len);
-	return 0;
 }
