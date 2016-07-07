@@ -11,8 +11,10 @@
 
 static void __call_ev(void *k, void *v, void *data) {
 	struct mux_socket *sock = (struct mux_socket *)v;
-	if (sock && sock->eventcb) {
-		sock->eventcb(sock, sock->mux->error_ev, sock->arg);
+	if (sock) {
+		sock->status = SOCK_ERROR;
+		if (sock->eventcb)
+			sock->eventcb(sock, sock->mux->error_ev, sock->arg);
 	}
 }
 
@@ -20,7 +22,7 @@ void free_seq_map(struct hashtable *map) {
 	if (NULL == map)
 		return;
 	hashtable_travel(map, __call_ev, NULL);
-	hashtable_destroy(map, 0, 1);
+	hashtable_destroy(map, 0, 0);
 }
 
 void mux_free(struct mux *m) {
@@ -79,3 +81,8 @@ void mux_listener_set_write_watermask(struct mux_listener *m, size_t mask) {
 	assert(mask >= 10240);
 	m->write_watermask = mask;
 }
+
+int mux_socket_status(struct mux_socket *sock) {
+	return sock->status;
+}
+

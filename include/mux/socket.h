@@ -8,7 +8,9 @@ struct mux_socket;
 enum mux_socket_status_e {
 	SOCK_INIT,
 	SOCK_ESTABLISH,
-	SOCK_CLOSE
+	SOCK_CLOSE,
+	SOCK_RST,
+	SOCK_ERROR
 };
 
 typedef void (*mux_data_cb)(struct mux_socket *client_sock, const char *data, size_t len, void *arg);
@@ -17,6 +19,8 @@ typedef void (*mux_event_cb)(struct mux_socket *client_sock, int event, void *ar
 struct mux_socket *mux_socket_new(struct mux *m);
 
 void mux_socket_close(struct mux_socket *sock);
+
+int mux_socket_status(struct mux_socket *sock);
 
 int mux_socket_connect(struct mux_socket *sock, const char *service_name);
 

@@ -86,6 +86,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 				}
 				if (mux_socket_recvdata(cli_sock, proto)) {
 					rst_seq = proto->sequence;
+					cli_sock->status = SOCK_ERROR;
 					goto rst;
 				}
 			break;
@@ -93,6 +94,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 				PEP_TRACE("muxconn: recv rst");
 				cli_sock = mux_socket_get(client, proto->sequence);
 				if (NULL != cli_sock) {
+					cli_sock->status = SOCK_RST;
 					mux_socket_incref(cli_sock);
 					if (cli_sock->eventcb)
 						cli_sock->eventcb(cli_sock, MUX_EV_RST, cli_sock->arg);
@@ -103,6 +105,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 				PEP_TRACE("muxconn: recv close");
 				cli_sock = mux_socket_get(client, proto->sequence);
 				if (NULL != cli_sock) {
+					cli_sock->status = SOCK_CLOSE;
 					mux_socket_incref(cli_sock);
 					if (cli_sock->eventcb)
 						cli_sock->eventcb(cli_sock, MUX_EV_EOF, cli_sock->arg);
@@ -146,7 +149,7 @@ static void __client_eventcb(struct bufferevent *bev, short events, void *ctx) {
 		if (client->client_eventcb)
 			client->client_eventcb(client, MUX_EV_EOF, client->arg);
 		goto reconnect;
-	}  else {
+	} else {
 		client->error_ev = MUX_EV_ERROR;
 		if (client->client_eventcb)
 			client->client_eventcb(client, MUX_EV_ERROR, client->arg);

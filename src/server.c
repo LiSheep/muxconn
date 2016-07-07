@@ -146,6 +146,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 				PEP_TRACE("muxconn: recv handshake seq %u", seq);
 				if (strncmp(proto->payload, MUX_PROTO_SECRET, MUX_PROTO_SECRET_LEN)) {
 					rst_seq = proto->sequence;
+					sock->status = SOCK_RST;
 					goto rst;
 				}
 				int left_len = proto->length - MUX_PROTO_SECRET_LEN;
@@ -174,6 +175,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 					goto rst;
 				}
 				void *arg = hashtable_search(server->listener->args, service_name);
+				sock->status = SOCK_ESTABLISH;
 				acceptcb(sock, arg);
 			break;
 			case PTYPE_PING:
@@ -189,6 +191,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 				PEP_TRACE("muxconn: recv rst");
 				sock = mux_socket_get(server, proto->sequence);
 				if (NULL != sock) {
+					sock->status = SOCK_RST;
 					mux_socket_incref(sock);
 					if (sock->eventcb)
 						sock->eventcb(sock, MUX_EV_RST, sock->arg);
@@ -199,6 +202,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 				PEP_TRACE("muxconn: recv close");
 				sock = mux_socket_get(server, proto->sequence);
 				if (NULL != sock) {
+					sock->status = SOCK_CLOSE;
 					mux_socket_incref(sock);
 					if (sock->eventcb)
 						sock->eventcb(sock, MUX_EV_EOF, sock->arg);
