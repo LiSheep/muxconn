@@ -122,8 +122,8 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 			mbuff = alloc_rst_msg(rst_seq, &mlen);
 			send_or_cache(client, mbuff, mlen);
 			free(mbuff);
-			if(NULL != cli_sock)
-				mux_socket_decref_free(cli_sock);
+			if (cli_sock->eventcb)
+				cli_sock->eventcb(cli_sock, MUX_EV_RST, cli_sock->arg);
 	}
 	return;
 error:
