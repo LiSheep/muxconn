@@ -85,6 +85,7 @@ static void __acceptcb(struct evconnlistener *listener, int fd,
 	server->remote_ip = ntohl(addr->sin_addr.s_addr);
 	server->remote_port = ntohs(addr->sin_port);
 	server->bev = bev;
+	server->status = MUX_ESTABLISH;
 
 	PEP_TRACE("muxconn: accept new client "NIPQUAD_FMT":%d", NIPQUAD_H(server->remote_ip), server->remote_port);
 	bufferevent_setcb(bev, __server_readcb, sock_cache_writecb, __server_eventcb, server);
@@ -114,8 +115,11 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 	char *mbuff = NULL;
 	size_t mlen = 0;
 	uint32_t rst_seq = 0;
+	if (server->status != MUX_ESTABLISH) {
+		PEP_ERROR("muxconn: server status error");
+		return;
+	}
 	PEP_TRACE("muxconn: recv from "NIPQUAD_FMT":%d", NIPQUAD_H(server->remote_ip), server->remote_port);
-	// printf("client recv from "NIPQUAD_FMT":%d. length %d\n", NIPQUAD_H(server->remote_ip), server->remote_port, length);
 	while(length >= MUX_PROTO_HEAD_LEN) {
 		mux_proto_t *proto = (mux_proto_t *)evbuffer_pullup(src, MUX_PROTO_HEAD_LEN);
 		if (NULL == proto)
@@ -236,6 +240,7 @@ static void __server_eventcb(struct bufferevent *bev, short events, void *ctx) {
 		server->error_ev = MUX_EV_ERROR;
 		PEP_INFO("muxconn: client close %s", strerror(errno));
 	}
+	server->status = MUX_CLOSE;
 	free_seq_map(server->seq_map);
 	server->seq_map = NULL;
 	mux_free(server);
