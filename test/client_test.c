@@ -9,7 +9,7 @@
 
 static char buff[20000];
 void readcb(struct mux_socket *sock, const char *data, size_t len, void *arg) {
-	printf("recv %d\n", len);
+	printf("recv %s %d\n", data, len);
 }
 
 void eventcb(struct mux_socket *sock, int event, void *arg) {

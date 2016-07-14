@@ -4,7 +4,31 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#include "version.h"
 #include "mux_internal.h"
+
+
+uint8_t *encode_32u(uint8_t *dst, uint32_t value) {
+	*dst++ = value >> 24;
+	*dst++ = value >> 16;
+	*dst++ = value >> 8;
+	*dst++ = value;
+	return dst;
+}
+
+uint32_t decode_32u(const uint8_t *src) {
+	return (uint32_t)src[0] << 24 | (uint32_t)src[1] << 16 | (uint32_t)src[2] << 8 | src[3];
+}
+
+uint8_t *encode_16u(uint8_t *dst, uint16_t value) {
+	*dst++ = value >> 8;
+	*dst++ = value;
+	return dst;
+}
+
+uint16_t decode_16u(const uint8_t *src) {
+	return (uint32_t)src[0] << 8 | src[1];
+}
 
 // out: tot_len proto len
 // return proto buff, need free by yourself
@@ -33,6 +57,23 @@ char *alloc_proto_msg(struct mux_socket *sock, uint8_t type, uint8_t flag,
 char *alloc_handshake_msg(struct mux_socket *sock, size_t *tot_len) {
 	assert(sock);
 	return alloc_proto_msg(sock, PTYPE_HANDSHAKE, 0, MUX_PROTO_SECRET, MUX_PROTO_SECRET_LEN, tot_len);
+}
+
+char *alloc_initial_msg(struct mux *m, size_t *tot_len) {
+	size_t len = 0;
+	char buf[20];
+	int p = 0;
+
+	buf[p] = INI_VERSION;
+	p++;
+	encode_16u(buf+p, sizeof(uint32_t));
+	p+=2;
+	encode_32u(buf+p, protocol_version());
+	p+=sizeof(uint32_t);
+
+	len = p;
+
+	return alloc_proto_msg(NULL, PTYPE_INIT, 0, buf, len, tot_len);
 }
 
 char *alloc_connect_handshake_msg(struct mux_socket *sock, const char *service_name, size_t *tot_len) {

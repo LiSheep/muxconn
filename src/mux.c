@@ -8,6 +8,7 @@
 #include <event2/event.h>
 #include "mux_internal.h"
 #include "hashtable.h"
+#include "utils.h"
 
 static void __call_ev(void *k, void *v, void *data) {
 	struct mux_socket *sock = (struct mux_socket *)v;
@@ -71,14 +72,14 @@ void mux_client_set_eventcb(struct mux *mux, mux_client_event_cb cb, void *arg) 
 }
 
 void mux_set_write_watermask(struct mux *m, size_t mask) {
-	assert(mask >= 10240);
+	assert(mask >= 0);
 	assert(m->bev);
 	m->write_watermask = mask;
 	bufferevent_setwatermark(m->bev, EV_WRITE, mask/2, mask);
 }
 
 void mux_listener_set_write_watermask(struct mux_listener *m, size_t mask) {
-	assert(mask >= 10240);
+	assert(mask >= 0);
 	m->write_watermask = mask;
 }
 
@@ -86,3 +87,24 @@ int mux_socket_status(struct mux_socket *sock) {
 	return sock->status;
 }
 
+int mux_dealinit_msg(struct mux *mux, char *payload, size_t len) {
+	int index = 0;
+	int p = 0;
+	uint16_t ilen = 0;
+	while((len - p) > 0) {
+		index = payload[p];
+		p++;
+		if (index == INI_VERSION) {
+			ilen = decode_16u(payload + p);
+			if (ilen != sizeof(uint32_t))
+				return -1;
+			p+=2;
+			mux->peer_version = decode_32u(payload + p);
+			p+=sizeof(uint32_t);
+			if (mux->peer_version < protocol_version())
+				mux->used_version = mux->peer_version;
+			else
+				mux->used_version = protocol_version();
+		}
+	}
+}

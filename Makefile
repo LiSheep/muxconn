@@ -18,7 +18,8 @@ TARGET_DEPS =			\
 	src/client.o		\
 	src/socket.o		\
 	src/hashtable.o		\
-	src/utils.o
+	src/utils.o			\
+	src/version.o
 	
 .PHONY: debug
 debug:

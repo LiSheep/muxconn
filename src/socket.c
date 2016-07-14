@@ -108,7 +108,6 @@ int send_or_cache(struct mux *mux, const char *data, size_t len) {
 		out_len = evbuffer_get_length(out_buffer);
 		if (out_len >= mux->write_watermask) {
 			// cache
-			PEP_INFO("cache %d", len);
 			return evbuffer_add(mux->output, data, len);
 		}
 		// send cache
@@ -118,11 +117,9 @@ int send_or_cache(struct mux *mux, const char *data, size_t len) {
 		}
 		// if no cache
 		if (out_len <= mux->write_watermask) {
-			PEP_INFO("send data %d", len);
 			return bufferevent_write(mux->bev, data, len);
 		} else {
 			int snd_len = mux->write_watermask - out_len;
-			PEP_INFO("send data2 %d", snd_len);
 			bufferevent_write(mux->bev, data, snd_len);
 			data += snd_len;
 			len -= snd_len;
@@ -139,7 +136,6 @@ void sock_cache_writecb(struct bufferevent *bev, void *ctx) {
 	size_t left_len = evbuffer_get_length(buf);
 	if (evbuffer_get_length(mux->output) > 0 && left_len < mux->write_watermask) {
 		// bufferevent_write_buffer(bev, mux->output);
-		PEP_INFO("cb send %d", mux->write_watermask - left_len);
 		evbuffer_remove_buffer(mux->output, buf, ((mux->write_watermask - left_len)>0)?(mux->write_watermask - left_len): 0);
 	}
 }

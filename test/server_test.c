@@ -13,6 +13,7 @@ char test_buff[LEN];
 void readcb(struct mux_socket *sock, const char *data, size_t len, void *arg) {
 	printf("%s\n", data);
 	printf("len %d\n", len);
+	mux_socket_write(sock, "hello", strlen("hello")+1);
 	mux_socket_close(sock);
 }
 

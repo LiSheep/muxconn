@@ -15,8 +15,13 @@
         ((unsigned char*)&(addr))[1], \
         ((unsigned char*)&(addr))[0] 
 
+enum INITIAL_INDEX {
+	INI_VERSION = 1
+};
+
 char *alloc_proto_msg(struct mux_socket *sock, uint8_t type, uint8_t flag, 
 						const char *payload, size_t payload_len, size_t *tot_len);
+char *alloc_initial_msg(struct mux *m, size_t *tot_len);
 char *alloc_handshake_msg(struct mux_socket *sock, size_t *tot_len);
 char *alloc_connect_handshake_msg(struct mux_socket *sock, const char *service_name, size_t *tot_len);
 char *alloc_data_msg(struct mux_socket *sock, const char *payload, size_t len, size_t *tot_len);

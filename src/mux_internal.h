@@ -25,6 +25,8 @@ struct mux {
 	uint32_t local_ip;
 	uint16_t local_port;
 	size_t write_watermask;
+	uint16_t peer_version;
+	uint16_t used_version;
 	
 	// sock
 	uint32_t sequence;
@@ -79,6 +81,7 @@ typedef struct mux_proto_s {
 
 enum mux_proto_type_e {
 	PTYPE_DATA = 0,
+	PTYPE_INIT,
 	PTYPE_HANDSHAKE,
 	PTYPE_PING,
 	PTYPE_PONG,
@@ -99,5 +102,6 @@ void free_seq_map(struct hashtable *map);
 int mux_socket_recvdata(struct mux_socket *sock, mux_proto_t *proto);
 void sock_cache_writecb(struct bufferevent *bev, void *ctx);
 int send_or_cache(struct mux *mux, const char *data, size_t len);
+int mux_dealinit_msg(struct mux *mux, char *payload, size_t len);
 
 #endif

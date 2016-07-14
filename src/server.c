@@ -85,7 +85,7 @@ static void __acceptcb(struct evconnlistener *listener, int fd,
 	server->remote_ip = ntohl(addr->sin_addr.s_addr);
 	server->remote_port = ntohs(addr->sin_port);
 	server->bev = bev;
-	server->status = MUX_ESTABLISH;
+	server->status = MUX_CONNECTED;
 
 	PEP_TRACE("muxconn: accept new client "NIPQUAD_FMT":%d", NIPQUAD_H(server->remote_ip), server->remote_port);
 	bufferevent_setcb(bev, __server_readcb, sock_cache_writecb, __server_eventcb, server);
@@ -115,10 +115,6 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 	char *mbuff = NULL;
 	size_t mlen = 0;
 	uint32_t rst_seq = 0;
-	if (server->status != MUX_ESTABLISH) {
-		PEP_ERROR("muxconn: server status error");
-		return;
-	}
 	PEP_TRACE("muxconn: recv from "NIPQUAD_FMT":%d", NIPQUAD_H(server->remote_ip), server->remote_port);
 	while(length >= MUX_PROTO_HEAD_LEN) {
 		mux_proto_t *proto = (mux_proto_t *)evbuffer_pullup(src, MUX_PROTO_HEAD_LEN);
@@ -133,7 +129,26 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 		proto = (mux_proto_t*)buff;
 		struct mux_socket *sock = NULL;
 		uint32_t seq = proto->sequence;
+		if (proto->type != PTYPE_INIT && server->status != MUX_ESTABLISH) {
+			PEP_ERROR("muxconn: server status error");
+			goto error;
+		}
 		switch (proto->type) {
+			case PTYPE_INIT:
+				if (mux_dealinit_msg(server, proto->payload, proto->length) < 0) {
+					PEP_ERROR("muxconn: recv errro PTYPE_INIT");
+					goto error;
+				}
+				server->status = MUX_ESTABLISH;
+				size_t len = 0;
+				char *buf = alloc_initial_msg(server, &len);
+				if (NULL == buf || len == 0) {
+					PEP_ERROR("mux alloc_initial_msg fail");
+					goto error;
+				}
+				send_or_cache(server, buf, len);
+				free(buf);
+			break;
 			case PTYPE_DATA:
 				PEP_TRACE("muxconn: recv seq %u, data_len: %d", seq, proto->length);
 				sock = mux_socket_get(server, proto->sequence);

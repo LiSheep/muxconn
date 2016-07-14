@@ -37,11 +37,6 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 	assert(client);
 	struct evbuffer* src = bufferevent_get_input(bev);
 	size_t length = evbuffer_get_length(src);
-	if (client->status != MUX_CONNECTED && client->status != MUX_ESTABLISH) {
-		PEP_ERROR("muxconn: client status error");
-		return;
-	}
-	client->status = MUX_ESTABLISH;
 	char *mbuff;
 	size_t mlen;
 	struct mux_socket *cli_sock = NULL;
@@ -51,14 +46,27 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 		mux_proto_t *proto = (mux_proto_t *)evbuffer_pullup(src, MUX_PROTO_HEAD_LEN);
 		if (NULL == proto)
 			break;
-		if(length < proto->length)
+		if(length < proto->length + MUX_PROTO_HEAD_LEN)
 			break;
 		char buff[proto->length + MUX_PROTO_HEAD_LEN];
 		bufferevent_read(bev, buff, sizeof(buff));
 		proto = (mux_proto_t*)buff;
 		if (proto->hr != 0)
 			goto error;
+		if (proto->type != PTYPE_INIT && client->status != MUX_ESTABLISH) {
+			PEP_ERROR("muxconn: client status error");
+			goto error;
+		}
 		switch (proto->type) {
+			case PTYPE_INIT:
+				if (mux_dealinit_msg(client, proto->payload, proto->length) < 0) {
+					PEP_ERROR("muxconn: recv errro PTYPE_INIT");
+					goto error;
+				}
+				client->status = MUX_ESTABLISH;
+				if (client->client_eventcb)
+					client->client_eventcb(client, MUX_EV_CONNECTED, client->arg);
+			break;
 			case PTYPE_HANDSHAKE:
 				PEP_TRACE("muxconn: recv handshake seq %u", proto->sequence);
 				if (strncmp(proto->payload, MUX_PROTO_SECRET, proto->length)) {
@@ -122,13 +130,13 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 			mbuff = alloc_rst_msg(rst_seq, &mlen);
 			send_or_cache(client, mbuff, mlen);
 			free(mbuff);
-			if (cli_sock->eventcb)
+			if (cli_sock && cli_sock->eventcb)
 				cli_sock->eventcb(cli_sock, MUX_EV_RST, cli_sock->arg);
 	}
 	return;
 error:
 	PEP_TRACE("muxconn: drain all");
-	evbuffer_drain(src, -1);
+	// evbuffer_drain(src, -1);
 	return;
 }
 
@@ -142,8 +150,15 @@ static void __client_eventcb(struct bufferevent *bev, short events, void *ctx) {
 		event_add(client->heartbeat_timer, &timeout);
 		client->bev = bev;
 		client->status = MUX_CONNECTED;
-		if (client->client_eventcb)
-			client->client_eventcb(client, MUX_EV_CONNECTED, client->arg);
+		size_t len = 0;
+		char *buf = alloc_initial_msg(client, &len);
+		if (NULL == buf || len == 0) {
+			PEP_ERROR("mux alloc_initial_msg fail");
+			goto reconnect;
+		}
+		send_or_cache(client, buf, len);
+		free(buf);
+		
 	} else if (events & BEV_EVENT_EOF) {
 		client->error_ev = MUX_EV_EOF;
 		if (client->client_eventcb)
