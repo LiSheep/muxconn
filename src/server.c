@@ -88,7 +88,7 @@ static void __acceptcb(struct evconnlistener *listener, int fd,
 	server->status = MUX_CONNECTED;
 
 	PEP_TRACE("muxconn: accept new client "NIPQUAD_FMT":%d", NIPQUAD_H(server->remote_ip), server->remote_port);
-	bufferevent_setcb(bev, __server_readcb, sock_cache_writecb, __server_eventcb, server);
+	bufferevent_setcb(bev, __server_readcb, NULL, __server_eventcb, server);
 	bufferevent_enable(bev, EV_READ | EV_WRITE);
 	if (server_listener->write_watermask > 0) {
 		server->write_watermask = server_listener->write_watermask;
@@ -120,8 +120,14 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 		mux_proto_t *proto = (mux_proto_t *)evbuffer_pullup(src, MUX_PROTO_HEAD_LEN);
 		if (NULL == proto)
 			break;
-		if (proto->hr != 0)
+		if (proto->hr != 0 || proto->reserve != 0) {
+			PEP_ERROR("muxconn: recv error proto");
 			goto error;
+		}
+		if (proto->length > MUX_PROTO_MAX_LEN) {
+			PEP_ERROR("muxconn: recv error proto length %d", proto->length);
+			goto error;
+		}
 		if(length < proto->length + MUX_PROTO_HEAD_LEN)
 			break;
 		char buff[proto->length + MUX_PROTO_HEAD_LEN];
@@ -136,7 +142,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 		switch (proto->type) {
 			case PTYPE_INIT:
 				if (mux_dealinit_msg(server, proto->payload, proto->length) < 0) {
-					PEP_ERROR("muxconn: recv errro PTYPE_INIT");
+					PEP_ERROR("muxconn: recv error PTYPE_INIT");
 					goto error;
 				}
 				server->status = MUX_ESTABLISH;
@@ -148,6 +154,15 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 				}
 				send_or_cache(server, buf, len);
 				free(buf);
+				server->write_timer = event_new(server->base, -1, EV_PERSIST, cache_write_timercb, server);
+				if (NULL == server->write_timer) {
+					PEP_ERROR("muxconn: event_new fail");
+					goto error;
+				}
+				struct timeval timeout;
+				timeout.tv_sec = 1;
+				timeout.tv_usec = 0;
+				event_add(server->write_timer, &timeout);
 			break;
 			case PTYPE_DATA:
 				PEP_TRACE("muxconn: recv seq %u, data_len: %d", seq, proto->length);
@@ -243,6 +258,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 	return;
 error:
 	PEP_ERROR("muxconn: message error.");
+	mux_free(server);
 	return;
 }
 

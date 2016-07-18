@@ -46,6 +46,14 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 		mux_proto_t *proto = (mux_proto_t *)evbuffer_pullup(src, MUX_PROTO_HEAD_LEN);
 		if (NULL == proto)
 			break;
+		if (proto->hr != 0 || proto->reserve != 0) {
+			PEP_ERROR("muxconn: recv error proto");
+			goto error;
+		}
+		if (proto->length > MUX_PROTO_MAX_LEN) {
+			PEP_ERROR("muxconn: recv error proto length %d", proto->length);
+			goto error;
+		}
 		if(length < proto->length + MUX_PROTO_HEAD_LEN)
 			break;
 		char buff[proto->length + MUX_PROTO_HEAD_LEN];
@@ -136,7 +144,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 	return;
 error:
 	PEP_TRACE("muxconn: drain all");
-	// evbuffer_drain(src, -1);
+	evbuffer_drain(src, -1);
 	return;
 }
 
@@ -148,6 +156,8 @@ static void __client_eventcb(struct bufferevent *bev, short events, void *ctx) {
 		timeout.tv_sec = 2;
 		timeout.tv_usec = 0;
 		event_add(client->heartbeat_timer, &timeout);
+		timeout.tv_sec = 1;
+		event_add(client->write_timer, &timeout);
 		client->bev = bev;
 		client->status = MUX_CONNECTED;
 		size_t len = 0;
@@ -214,7 +224,7 @@ static int __connect_server(struct mux *client) {
 		return -1;
 	}
 
-	bufferevent_setcb(client->bev, __client_readcb, sock_cache_writecb, __client_eventcb, client);
+	bufferevent_setcb(client->bev, __client_readcb, NULL, __client_eventcb, client);
 	bufferevent_enable(client->bev, EV_WRITE|EV_READ);
 	return 0;
 }
@@ -222,6 +232,7 @@ static int __connect_server(struct mux *client) {
 static void __reconnect_server(struct mux *client) {
 	struct timeval timeout;
 	event_del(client->heartbeat_timer);
+	event_del(client->write_timer);
 	if (client->bev) {
 		bufferevent_free(client->bev);
 		client->bev = NULL;
@@ -254,15 +265,22 @@ struct mux *mux_client_init(struct event_base* base, const char *remote_ip, int 
 		PEP_ERROR("muxconn: event_new fail");
 		goto fail2;
 	}
+	client->write_timer = event_new(base, -1, EV_PERSIST, cache_write_timercb, client);
+	if (NULL == client->write_timer) {
+		PEP_ERROR("muxconn: event_new fail");
+		goto fail3;
+	}
 	client->output = evbuffer_new();
 	if (NULL == client->output) {
 		PEP_ERROR("muxconn: evbuffer_new fail");
-		goto fail3;
+		goto fail4;
 	}
 	if (__connect_server(client) == -1) {
 		__reconnect_server(client);
 	}
 	return client;
+fail4:
+	event_free(client->write_timer);
 fail3:
 	event_free(client->heartbeat_timer);
 fail2:

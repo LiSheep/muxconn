@@ -143,6 +143,8 @@ void sock_cache_writecb(struct bufferevent *bev, void *ctx) {
 struct mux_socket *mux_socket_new(struct mux *m) {
 	if (NULL == m)
 		goto fail;
+	if (NULL == m->base)
+		goto fail;
 	if (m->status < MUX_CONNECTED)
 		goto fail;
 	struct mux_socket *sock = calloc(1, sizeof(struct mux_socket));
@@ -247,8 +249,6 @@ struct mux_socket *mux_socket_get(struct mux *m, uint32_t seq) {
 	return hashtable_search(m->seq_map, &seq);
 }
 
-#define MUX_PROTO_MAX_LEN 4200
-#define MUX_PACKAGE_MAX_LEN (MUX_PROTO_MAX_LEN - MUX_PROTO_HEAD_LEN)
 static int mux_socket_write_bigdata(struct mux_socket *sock, const char *data, size_t len) {
 	assert(sock && sock->mux);
 	assert(len > MUX_PACKAGE_MAX_LEN);

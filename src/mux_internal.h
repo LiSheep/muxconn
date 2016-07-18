@@ -15,6 +15,9 @@
 #define MUX_PROTO_SECRET_LEN 5
 #define MUX_PROTO_HEAD_LEN sizeof(mux_proto_t)
 
+#define MUX_PROTO_MAX_LEN 4200
+#define MUX_PACKAGE_MAX_LEN (MUX_PROTO_MAX_LEN - MUX_PROTO_HEAD_LEN)
+
 struct mux_listener;
 
 struct mux {
@@ -39,6 +42,7 @@ struct mux {
 	void *arg;
 	struct event* reconnect_timer;
 	struct event* heartbeat_timer;
+	struct event* write_timer; // write every second
 	struct bufferevent* bev;
 	struct evbuffer* output; // for big write
 };
@@ -103,5 +107,6 @@ int mux_socket_recvdata(struct mux_socket *sock, mux_proto_t *proto);
 void sock_cache_writecb(struct bufferevent *bev, void *ctx);
 int send_or_cache(struct mux *mux, const char *data, size_t len);
 int mux_dealinit_msg(struct mux *mux, char *payload, size_t len);
+void cache_write_timercb(int fd, short events, void *ctx);
 
 #endif

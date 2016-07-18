@@ -36,7 +36,10 @@ void mux_free(struct mux *m) {
 			bufferevent_free(m->bev);
 		if (m->seq_map)
 			free_seq_map(m->seq_map);
-
+		if (m->write_timer)
+			event_free(m->write_timer);
+		if (m->output)
+			evbuffer_free(m->output);
 		free(m);
 	}
 }
@@ -73,9 +76,7 @@ void mux_client_set_eventcb(struct mux *mux, mux_client_event_cb cb, void *arg) 
 
 void mux_set_write_watermask(struct mux *m, size_t mask) {
 	assert(mask >= 0);
-	assert(m->bev);
 	m->write_watermask = mask;
-	bufferevent_setwatermark(m->bev, EV_WRITE, mask/2, mask);
 }
 
 void mux_listener_set_write_watermask(struct mux_listener *m, size_t mask) {
@@ -107,4 +108,11 @@ int mux_dealinit_msg(struct mux *mux, char *payload, size_t len) {
 				mux->used_version = protocol_version();
 		}
 	}
+}
+
+void cache_write_timercb(int fd, short events, void *ctx) {
+	struct mux *mux = ctx;
+	if (NULL == mux->bev)
+		return;
+	sock_cache_writecb(mux->bev, mux);
 }
