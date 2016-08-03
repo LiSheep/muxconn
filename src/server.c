@@ -180,7 +180,6 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 				PEP_TRACE("muxconn: recv handshake seq %u", seq);
 				if (strncmp(proto->payload, MUX_PROTO_SECRET, MUX_PROTO_SECRET_LEN)) {
 					rst_seq = proto->sequence;
-					sock->status = SOCK_RST;
 					goto rst;
 				}
 				int left_len = proto->length - MUX_PROTO_SECRET_LEN;
@@ -252,8 +251,8 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 			mbuff = alloc_rst_msg(rst_seq, &mlen);
 			send_or_cache(server, mbuff, mlen);
 			free(mbuff);
-			if(NULL != sock)
-				mux_socket_decref_free(sock);
+			if (sock && sock->eventcb)
+				sock->eventcb(sock, MUX_EV_RST, sock->arg);
 	}
 	return;
 error:
