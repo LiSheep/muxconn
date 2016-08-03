@@ -182,10 +182,12 @@ static void __client_eventcb(struct bufferevent *bev, short events, void *ctx) {
 	}
 	return;
 reconnect:
-	free_seq_map(client->seq_map);
-	client->seq_map = NULL;
-	client->status = MUX_CLOSE;
-	__reconnect_server(client);
+	if (client->status != MUX_CONNECTING) {
+		free_seq_map(client->seq_map);
+		client->seq_map = NULL;
+		client->status = MUX_CONNECTING;
+		__reconnect_server(client);
+	}
 }
 
 static void __heartbeat_timercb(int fd, short events, void *ctx) {
@@ -210,7 +212,9 @@ static int __connect_server(struct mux *client) {
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(client->remote_ip);
 	addr.sin_port = htons(client->remote_port);
-
+	if (client->bev) {
+		bufferevent_free(client->bev);
+	}
 	client->bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
 	if (NULL == client->bev) {
 		PEP_ERROR("muxconn: bufferevent_socket_new fail");
@@ -223,7 +227,10 @@ static int __connect_server(struct mux *client) {
 		client->bev = NULL;
 		return -1;
 	}
-
+	struct timeval timeout;
+	timeout.tv_sec = 4;
+	timeout.tv_usec = 0;
+	bufferevent_set_timeouts(client->bev, &timeout, NULL);
 	bufferevent_setcb(client->bev, __client_readcb, NULL, __client_eventcb, client);
 	bufferevent_enable(client->bev, EV_WRITE|EV_READ);
 	return 0;
@@ -233,12 +240,7 @@ static void __reconnect_server(struct mux *client) {
 	struct timeval timeout;
 	event_del(client->heartbeat_timer);
 	event_del(client->write_timer);
-	if (client->bev) {
-		bufferevent_free(client->bev);
-		client->bev = NULL;
-	}
-
-	timeout.tv_sec = 1; 
+	timeout.tv_sec = 5; 
 	timeout.tv_usec = 0;
 	event_add(client->reconnect_timer, &timeout);
 }
@@ -252,7 +254,7 @@ struct mux *mux_client_init(struct event_base* base, const char *remote_ip, int 
 	client->remote_ip = ntohl(inet_addr(remote_ip));
 	client->remote_port = remote_port;
 	client->base = base;
-	client->status = MUX_CONNECTING;
+	client->status = MUX_INIT;
 
 	client->reconnect_timer = event_new(base, -1, EV_PERSIST, __reconnect_timercb, client);
 	if (NULL == client->reconnect_timer) {

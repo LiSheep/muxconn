@@ -11,7 +11,8 @@ typedef void (*mux_accept_cb)(struct mux_socket *client_sock, void *arg);
 typedef void (*mux_client_event_cb)(struct mux* mux, int event, void *arg);
 
 enum mux_status {
-	MUX_CONNECTING = 0,
+	MUX_INIT = 0,
+	MUX_CONNECTING,
 	MUX_CONNECTED,
 	MUX_ESTABLISH,
 	MUX_CLOSE

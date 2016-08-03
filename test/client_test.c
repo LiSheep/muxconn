@@ -39,6 +39,7 @@ void eventcb2(struct mux_socket *sock, int event, void *arg) {
 
 void client_eventcb(struct mux *mux, int event, void *arg) {
 	if (event == MUX_EV_CONNECTED) {
+		printf("connected success\n");
 		struct mux_socket *sock = mux_socket_new(mux);
 		assert(sock);
 		mux_socket_connect(sock, "test");
