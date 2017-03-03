@@ -125,7 +125,7 @@ static void __server_readcb(struct bufferevent *bev, void *ctx) {
 			goto error;
 		}
 		if (proto->length > MUX_PROTO_MAX_LEN) {
-			PEP_ERROR("muxconn: recv error proto length %d", proto->length);
+			PEP_ERROR("muxconn: recv error proto length %u", proto->length);
 			goto error;
 		}
 		if(length < proto->length + MUX_PROTO_HEAD_LEN)

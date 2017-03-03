@@ -214,10 +214,10 @@ void mux_socket_decref_free(struct mux_socket *sock) {
 }
 
 void mux_socket_close(struct mux_socket *sock) {
-	sock->status = SOCK_CLOSE;
 	if (NULL == sock || NULL == sock->mux->bev)
 		return;
 	assert(sock->mux);
+    sock->status = SOCK_CLOSE;
 	size_t len = 0;
 	char * buff = alloc_close_msg(sock, &len);
 	send_or_cache(sock->mux, buff, len);

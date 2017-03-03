@@ -37,6 +37,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 	assert(client);
 	struct evbuffer* src = bufferevent_get_input(bev);
 	size_t length = evbuffer_get_length(src);
+	client->status = MUX_ESTABLISH;
 	char *mbuff;
 	size_t mlen;
 	struct mux_socket *cli_sock = NULL;
@@ -51,7 +52,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 			goto error;
 		}
 		if (proto->length > MUX_PROTO_MAX_LEN) {
-			PEP_ERROR("muxconn: recv error proto length %d", proto->length);
+			PEP_ERROR("muxconn: recv error proto length %u", proto->length);
 			goto error;
 		}
 		if(length < proto->length + MUX_PROTO_HEAD_LEN)
@@ -59,7 +60,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 		char buff[proto->length + MUX_PROTO_HEAD_LEN];
 		bufferevent_read(bev, buff, sizeof(buff));
 		proto = (mux_proto_t*)buff;
-		if (proto->hr != 0)
+		if (proto->hr != 0 || proto->reserve != 0)
 			goto error;
 		if (proto->type != PTYPE_INIT && client->status != MUX_ESTABLISH) {
 			PEP_ERROR("muxconn: client status error");
@@ -71,6 +72,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 					PEP_ERROR("muxconn: recv errro PTYPE_INIT");
 					goto error;
 				}
+				PEP_INFO("muxconn: connected success version: %d", client->used_version);
 				client->status = MUX_ESTABLISH;
 				if (client->client_eventcb)
 					client->client_eventcb(client, MUX_EV_CONNECTED, client->arg);
@@ -87,7 +89,7 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 					goto rst;
 				}
 				cli_sock->status = SOCK_ESTABLISH;
-				if (cli_sock && cli_sock->eventcb)
+				if (cli_sock->eventcb)
 					cli_sock->eventcb(cli_sock, MUX_EV_CONNECTED, cli_sock->arg);
 			break;
 			case PTYPE_PONG:
@@ -110,8 +112,8 @@ static void __client_readcb(struct bufferevent *bev, void *ctx) {
 				PEP_TRACE("muxconn: recv rst");
 				cli_sock = mux_socket_get(client, proto->sequence);
 				if (NULL != cli_sock) {
-					cli_sock->status = SOCK_RST;
 					mux_socket_incref(cli_sock);
+					cli_sock->status = SOCK_RST;
 					if (cli_sock->eventcb)
 						cli_sock->eventcb(cli_sock, MUX_EV_RST, cli_sock->arg);
 					mux_socket_decref_free(cli_sock);
